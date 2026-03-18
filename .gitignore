@@ -30,7 +30,7 @@ dist-ssr
 *.sw?
 
 # Windows system files
-Thumbs.db
+Thumbs.dbs
 desktop.ini
 
 # AI Agent

@@ -1,15 +1,22 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiAuthClient } from '../api/axios';
 import { useAuthStore } from '../store/useAuthStore';
 
+const redirectUri = import.meta.env.VITE_GOOGLE_REDIRECT_URI || `${window.location.origin}/auth/callback`;
+
 const AuthCallback = () => {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
-    const setAuth = useAuthStore((state) => state.setAuth);
+    const setAuth = useAuthStore((state: any) => state.setAuth);
     const [error, setError] = useState<string | null>(null);
 
+    const initialized = useRef(false);
+
     useEffect(() => {
+        if (initialized.current) return;
+        initialized.current = true;
+
         const authorize = async () => {
             const code = searchParams.get('code');
             const errorParam = searchParams.get('error');
@@ -25,21 +32,16 @@ const AuthCallback = () => {
             }
 
             try {
-                // 프론트엔드 환경변수에 설정된 콜백 URL 사용, 없으면 현재 호스트 기반 설정
-                const redirectUri = typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'http://localhost:3000/auth/callback';
-                
                 const response = await apiAuthClient.post('/auth/google/token', {
                     code,
                     redirect_uri: redirectUri
                 });
 
-                if (response.data && response.data.access_token) {
+                if (response.data && response.data.expires_at) {
                     setAuth({
-                        access_token: response.data.access_token,
-                        refresh_token: response.data.refresh_token,
                         expires_at: response.data.expires_at,
                     });
-                    
+
                     // TODO: Triage 대시보드로 이동
                     navigate('/', { replace: true });
                 } else {
@@ -60,7 +62,7 @@ const AuthCallback = () => {
                 <div className="rounded-2xl border border-red-200 bg-red-50 p-8 max-w-md w-full">
                     <h2 className="text-2xl font-bold text-red-600 mb-4">로그인 오류</h2>
                     <p className="text-red-500 mb-6">{error}</p>
-                    <button 
+                    <button
                         onClick={() => navigate('/')}
                         className="rounded-full bg-red-600 px-6 py-2 text-white font-medium hover:bg-red-700 transition"
                     >
