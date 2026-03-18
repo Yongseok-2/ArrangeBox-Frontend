@@ -42,8 +42,8 @@ const AuthCallback = () => {
                         expires_at: response.data.expires_at,
                     });
 
-                    // TODO: Triage 대시보드로 이동
-                    navigate('/', { replace: true });
+                    // 성공 시 대시보드(triage)로 이동
+                    navigate('/triage', { replace: true });
                 } else {
                     setError('토큰을 받아오지 못했습니다.');
                 }
