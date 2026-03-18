@@ -1,10 +1,20 @@
 import { motion } from 'motion/react';
 import { Leaf, ArrowRight, Mail, Inbox, Trash2, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useGoogleLogin } from '@/hooks/useGoogleLogin'; // Added
+import { useNavigate } from 'react-router-dom';
+import { useAuthStore } from '@/store/useAuthStore';
 
 const Hero = () => {
-    const { login, isLoading } = useGoogleLogin();
+    const navigate = useNavigate();
+    const { isAuthenticated } = useAuthStore();
+
+    const handleStart = () => {
+        if (isAuthenticated) {
+            navigate('/triage');
+        } else {
+            navigate('/login');
+        }
+    };
 
     return (
         <section className="relative min-h-[90vh] overflow-hidden bg-[#FAFAFA] pt-32 pb-20 flex items-center">
@@ -34,11 +44,10 @@ const Hero = () => {
                         </p>
                         <div className="flex flex-col sm:flex-row gap-4">
                             <button 
-                                onClick={login}
-                                disabled={isLoading}
-                                className="group flex items-center justify-center gap-2 rounded-full bg-orange-500 px-8 py-4 text-base font-bold text-white transition-all hover:bg-orange-600 hover:shadow-xl hover:shadow-orange-500/30 disabled:opacity-70"
+                                onClick={handleStart}
+                                className="group flex items-center justify-center gap-2 rounded-full bg-orange-500 px-8 py-4 text-base font-bold text-white transition-all hover:bg-orange-600 hover:shadow-xl hover:shadow-orange-500/30"
                             >
-                                {isLoading ? '준비 중...' : '무료로 정리 시작하기'}
+                                무료로 정리 시작하기
                                 <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
                             </button>
                             <button className="flex items-center justify-center gap-2 rounded-full bg-white border border-neutral-200 px-8 py-4 text-base font-bold text-neutral-700 transition-all hover:border-orange-200 hover:bg-orange-50">
