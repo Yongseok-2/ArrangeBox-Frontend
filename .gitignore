@@ -32,3 +32,6 @@ dist-ssr
 # Windows system files
 Thumbs.db
 desktop.ini
+
+# AI Agent
+agent/

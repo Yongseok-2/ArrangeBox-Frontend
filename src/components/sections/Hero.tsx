@@ -1,8 +1,11 @@
 import { motion } from 'motion/react';
 import { Leaf, ArrowRight, Mail, Inbox, Trash2, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useGoogleLogin } from '@/hooks/useGoogleLogin'; // Added
 
 const Hero = () => {
+    const { login, isLoading } = useGoogleLogin();
+
     return (
         <section className="relative min-h-[90vh] overflow-hidden bg-[#FAFAFA] pt-32 pb-20 flex items-center">
             {/* Background Elements */}
@@ -30,8 +33,12 @@ const Hero = () => {
                             쾌적한 환경과 지속 가능한 미래를 만듭니다.
                         </p>
                         <div className="flex flex-col sm:flex-row gap-4">
-                            <button className="group flex items-center justify-center gap-2 rounded-full bg-orange-500 px-8 py-4 text-base font-bold text-white transition-all hover:bg-orange-600 hover:shadow-xl hover:shadow-orange-500/30">
-                                무료로 정리 시작하기
+                            <button 
+                                onClick={login}
+                                disabled={isLoading}
+                                className="group flex items-center justify-center gap-2 rounded-full bg-orange-500 px-8 py-4 text-base font-bold text-white transition-all hover:bg-orange-600 hover:shadow-xl hover:shadow-orange-500/30 disabled:opacity-70"
+                            >
+                                {isLoading ? '준비 중...' : '무료로 정리 시작하기'}
                                 <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
                             </button>
                             <button className="flex items-center justify-center gap-2 rounded-full bg-white border border-neutral-200 px-8 py-4 text-base font-bold text-neutral-700 transition-all hover:border-orange-200 hover:bg-orange-50">

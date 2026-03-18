@@ -3,11 +3,13 @@ import { Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AnimatePresence } from 'motion/react';
 import { motion } from 'framer-motion';
+import { useGoogleLogin } from '@/hooks/useGoogleLogin';
 
 const logoImg = 'https://placehold.co/40x40/orange/white?text=Logo';
 const Navbar = () => {
     const [isOpen, setIsOpen] = useState(false);
     const [scrolled, setScrolled] = useState(false);
+    const { login, isLoading } = useGoogleLogin();
 
     useEffect(() => {
         const handleScroll = () => setScrolled(window.scrollY > 20);
@@ -37,8 +39,12 @@ const Navbar = () => {
                     <a href="#features" className="text-sm font-medium text-neutral-600 hover:text-orange-500 transition-colors">기능</a>
                     <a href="#impact" className="text-sm font-medium text-neutral-600 hover:text-orange-500 transition-colors">환경 임팩트</a>
                     <a href="#how-it-works" className="text-sm font-medium text-neutral-600 hover:text-orange-500 transition-colors">이용 방법</a>
-                    <button className="rounded-full bg-neutral-900 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-orange-500 hover:shadow-lg hover:shadow-orange-500/25">
-                        무료로 시작하기
+                    <button 
+                        onClick={login}
+                        disabled={isLoading}
+                        className="rounded-full bg-neutral-900 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-orange-500 hover:shadow-lg hover:shadow-orange-500/25 disabled:opacity-70"
+                    >
+                        {isLoading ? '준비 중...' : '무료로 시작하기'}
                     </button>
                 </div>
 
@@ -60,8 +66,12 @@ const Navbar = () => {
                         <a href="#features" onClick={() => setIsOpen(false)} className="text-lg font-medium text-neutral-800">기능</a>
                         <a href="#impact" onClick={() => setIsOpen(false)} className="text-lg font-medium text-neutral-800">환경 임팩트</a>
                         <a href="#how-it-works" onClick={() => setIsOpen(false)} className="text-lg font-medium text-neutral-800">이용 방법</a>
-                        <button className="mt-4 rounded-xl bg-orange-500 px-5 py-3 text-base font-semibold text-white w-full">
-                            무료로 시작하기
+                        <button 
+                            onClick={login}
+                            disabled={isLoading}
+                            className="mt-4 rounded-xl bg-orange-500 px-5 py-3 text-base font-semibold text-white w-full disabled:opacity-70"
+                        >
+                            {isLoading ? '준비 중...' : '무료로 시작하기'}
                         </button>
                     </motion.div>
                 )}
