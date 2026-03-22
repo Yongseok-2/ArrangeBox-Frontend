@@ -1,21 +1,50 @@
 import { useState, useEffect } from 'react';
-import { Menu, X } from 'lucide-react';
+import { Menu, X, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AnimatePresence } from 'motion/react';
 import { motion } from 'framer-motion';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useGoogleLogin } from '@/hooks/useGoogleLogin';
+import { useAuthStore } from '@/store/useAuthStore';
+import { apiAuthClient } from '@/api/axios';
 
 const logoImg = 'https://placehold.co/40x40/orange/white?text=Logo';
+
 const Navbar = () => {
     const [isOpen, setIsOpen] = useState(false);
     const [scrolled, setScrolled] = useState(false);
     const { login, isLoading } = useGoogleLogin();
+    const { isAuthenticated, clearAuth } = useAuthStore();
+    const navigate = useNavigate();
+    const location = useLocation();
+
+    const isLandingPage = location.pathname === '/';
 
     useEffect(() => {
         const handleScroll = () => setScrolled(window.scrollY > 20);
         window.addEventListener('scroll', handleScroll);
         return () => window.removeEventListener('scroll', handleScroll);
     }, []);
+
+    const handleLogout = async () => {
+        if (confirm('로그아웃 하시겠습니까?')) {
+            try {
+                // 백엔드 세션/쿠키 삭제 요청
+                await apiAuthClient.post('/auth/logout');
+            } catch (error) {
+                console.error('Logout API failed:', error);
+                // API가 실패하더라도 클라이언트 상태는 지워주는 것이 안전합니다.
+            } finally {
+                clearAuth();
+                navigate('/');
+                setIsOpen(false);
+            }
+        }
+    };
+
+    const handleLogoClick = () => {
+        navigate(isAuthenticated ? '/triage' : '/');
+    };
 
     return (
         <nav
@@ -25,7 +54,10 @@ const Navbar = () => {
             )}
         >
             <div className="mx-auto max-w-7xl px-6 md:px-10 flex items-center justify-between">
-                <div className="flex items-center gap-3">
+                <div
+                    className="flex items-center gap-3 cursor-pointer"
+                    onClick={handleLogoClick}
+                >
                     <div className="flex h-10 w-10 items-center justify-center overflow-hidden">
                         <img src={logoImg} alt="Arrange Box Logo" className="h-full w-full object-contain" />
                     </div>
@@ -36,16 +68,31 @@ const Navbar = () => {
 
                 {/* Desktop Nav */}
                 <div className="hidden md:flex items-center gap-8">
-                    <a href="#features" className="text-sm font-medium text-neutral-600 hover:text-orange-500 transition-colors">기능</a>
-                    <a href="#impact" className="text-sm font-medium text-neutral-600 hover:text-orange-500 transition-colors">환경 임팩트</a>
-                    <a href="#how-it-works" className="text-sm font-medium text-neutral-600 hover:text-orange-500 transition-colors">이용 방법</a>
-                    <button 
-                        onClick={login}
-                        disabled={isLoading}
-                        className="rounded-full bg-neutral-900 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-orange-500 hover:shadow-lg hover:shadow-orange-500/25 disabled:opacity-70"
-                    >
-                        {isLoading ? '준비 중...' : '무료로 시작하기'}
-                    </button>
+                    {isLandingPage && !isAuthenticated && (
+                        <>
+                            <a href="#features" className="text-sm font-medium text-neutral-600 hover:text-orange-500 transition-colors">기능</a>
+                            <a href="#impact" className="text-sm font-medium text-neutral-600 hover:text-orange-500 transition-colors">환경 임팩트</a>
+                            <a href="#how-it-works" className="text-sm font-medium text-neutral-600 hover:text-orange-500 transition-colors">이용 방법</a>
+                        </>
+                    )}
+
+                    {isAuthenticated ? (
+                        <button
+                            onClick={handleLogout}
+                            className="flex items-center gap-2 text-sm font-semibold text-neutral-600 hover:text-orange-500 transition-colors px-4 py-2 rounded-full hover:bg-orange-50"
+                        >
+                            <LogOut size={16} />
+                            로그아웃
+                        </button>
+                    ) : (
+                        <button
+                            onClick={login}
+                            disabled={isLoading}
+                            className="rounded-full bg-neutral-900 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-orange-500 hover:shadow-lg hover:shadow-orange-500/25 disabled:opacity-70"
+                        >
+                            {isLoading ? '준비 중...' : '무료로 시작하기'}
+                        </button>
+                    )}
                 </div>
 
                 {/* Mobile Nav Toggle */}
@@ -63,16 +110,31 @@ const Navbar = () => {
                         exit={{ opacity: 0, y: -20 }}
                         className="absolute inset-x-0 top-full bg-white border-b border-neutral-100 shadow-xl p-6 flex flex-col gap-4 md:hidden"
                     >
-                        <a href="#features" onClick={() => setIsOpen(false)} className="text-lg font-medium text-neutral-800">기능</a>
-                        <a href="#impact" onClick={() => setIsOpen(false)} className="text-lg font-medium text-neutral-800">환경 임팩트</a>
-                        <a href="#how-it-works" onClick={() => setIsOpen(false)} className="text-lg font-medium text-neutral-800">이용 방법</a>
-                        <button 
-                            onClick={login}
-                            disabled={isLoading}
-                            className="mt-4 rounded-xl bg-orange-500 px-5 py-3 text-base font-semibold text-white w-full disabled:opacity-70"
-                        >
-                            {isLoading ? '준비 중...' : '무료로 시작하기'}
-                        </button>
+                        {isLandingPage && !isAuthenticated && (
+                            <>
+                                <a href="#features" onClick={() => setIsOpen(false)} className="text-lg font-medium text-neutral-800">기능</a>
+                                <a href="#impact" onClick={() => setIsOpen(false)} className="text-lg font-medium text-neutral-800">환경 임팩트</a>
+                                <a href="#how-it-works" onClick={() => setIsOpen(false)} className="text-lg font-medium text-neutral-800">이용 방법</a>
+                            </>
+                        )}
+
+                        {isAuthenticated ? (
+                            <button
+                                onClick={handleLogout}
+                                className="mt-4 flex items-center justify-center gap-2 rounded-xl bg-neutral-100 px-5 py-3 text-base font-semibold text-neutral-700 w-full"
+                            >
+                                <LogOut size={18} />
+                                로그아웃
+                            </button>
+                        ) : (
+                            <button
+                                onClick={login}
+                                disabled={isLoading}
+                                className="mt-4 rounded-xl bg-orange-500 px-5 py-3 text-base font-semibold text-white w-full disabled:opacity-70"
+                            >
+                                {isLoading ? '준비 중...' : '무료로 시작하기'}
+                            </button>
+                        )}
                     </motion.div>
                 )}
             </AnimatePresence>
