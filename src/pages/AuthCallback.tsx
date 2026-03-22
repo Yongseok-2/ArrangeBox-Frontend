@@ -40,10 +40,11 @@ const AuthCallback = () => {
                 if (response.data && response.data.expires_at) {
                     setAuth({
                         expires_at: response.data.expires_at,
+                        account_id: response.data.account_id,
                     });
 
-                    // 성공 시 대시보드(triage)로 이동
-                    navigate('/triage', { replace: true });
+                    // 성공 시 이메일 가져오기 페이지로 이동
+                    navigate('/fetch-email', { replace: true });
                 } else {
                     setError('토큰을 받아오지 못했습니다.');
                 }

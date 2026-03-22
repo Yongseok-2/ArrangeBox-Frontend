@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { ArrowRight } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 
 const HowItWorks = () => {
     const steps = [
@@ -9,25 +9,20 @@ const HowItWorks = () => {
     ];
 
     return (
-        <section id="how-it-works" className="py-24 bg-[#FAFAFA]">
+        <section id="how-it-works" className="py-16 bg-[#FAFAFA]">
             <div className="mx-auto max-w-7xl px-6 md:px-10">
                 <div className="grid lg:grid-cols-[1fr_1.5fr] gap-16 items-center">
                     <div>
-                        <div className="inline-block px-4 py-1.5 rounded-full bg-orange-100 text-orange-600 text-sm font-bold tracking-widest mb-6">
+                        <Badge variant="secondary" className="inline-flex h-auto px-5 py-1 rounded-full bg-orange-100 text-orange-600 text-[13px] font-black tracking-widest mb-5 hover:bg-orange-100 border-none shadow-none">
                             WORKFLOW
-                        </div>
-                        <h2 className="text-4xl sm:text-5xl font-bold text-neutral-900 leading-[1.2] mb-6">
-                            박스에 담고, <br />
-                            비우면 끝납니다.
+                        </Badge>
+                        <h2 className="text-4xl sm:text-5xl lg:text-[3.3rem] font-bold text-neutral-900 leading-[1.15] tracking-tight mb-8">
+                            박스에 담고, 비우면 끝납니다.
                         </h2>
-                        <p className="text-lg text-neutral-600 mb-10 font-medium leading-relaxed">
-                            복잡한 설정이나 하나하나 체크할 필요가 없습니다. <br />
+                        <p className="text-lg sm:text-xl text-neutral-600 font-medium leading-[1.6]">
+                            복잡한 설정이나 하나하나 체크할 필요가 없습니다. <br className="hidden sm:block" />
                             Arrange Box가 분류하고, 당신은 결정만 하세요.
                         </p>
-
-                        <button className="hidden lg:flex items-center gap-2 rounded-full bg-neutral-900 px-6 py-3 text-sm font-bold text-white transition hover:bg-orange-500">
-                            더 알아보기 <ArrowRight className="h-4 w-4" />
-                        </button>
                     </div>
 
                     <div className="space-y-6">

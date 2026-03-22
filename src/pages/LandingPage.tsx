@@ -7,7 +7,7 @@ import CTA from '../components/sections/CTA';
 
 const LandingPage = () => {
     return (
-        <div className="flex flex-col gap-24 md:gap-32 pb-20">
+        <div className="flex flex-col">
             <Hero />
             <Features />
             <Impact />
