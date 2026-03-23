@@ -7,15 +7,15 @@ import Footer from './Footer';
 export default function AppLayout() {
   const location = useLocation();
   const isLandingPage = location.pathname === '/';
+  const isTriagePage = location.pathname.startsWith('/triage');
 
   return (
     <div className="min-h-screen bg-[#FAFAFA] font-sans text-neutral-900 flex flex-col">
       <Navbar />
 
-      {/* Main Content */}
       <main className={cn(
-        "flex-1 w-full mx-auto",
-        isLandingPage ? "pt-24" : "pt-32 pb-20 max-w-7xl px-6 md:px-10"
+        "flex-1 w-full flex flex-col",
+        isLandingPage ? "pt-24 mx-auto" : isTriagePage ? "pt-24" : "pt-32 pb-20 max-w-7xl mx-auto px-6 md:px-10"
       )}>
         <AnimatePresence mode="wait">
           <motion.div
@@ -30,7 +30,7 @@ export default function AppLayout() {
         </AnimatePresence>
       </main>
 
-      <Footer />
+      {!isTriagePage && <Footer />}
     </div>
   );
 }
