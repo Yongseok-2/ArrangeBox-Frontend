@@ -4,6 +4,7 @@ interface BasketItem {
     id: string;
     sender: string;
     subject: string;
+    category?: string;
 }
 
 interface BasketState {
