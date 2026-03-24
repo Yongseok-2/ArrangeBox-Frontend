@@ -7,8 +7,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useGoogleLogin } from '@/hooks/useGoogleLogin';
 import { useAuthStore } from '@/store/useAuthStore';
 import { apiAuthClient } from '@/api/axios';
-
-const logoImg = 'https://placehold.co/40x40/orange/white?text=Logo';
+import FetchEmailModal from '@/components/FetchEmailModal';
+import { CloudDownload } from 'lucide-react';
 
 const Navbar = () => {
     const [isOpen, setIsOpen] = useState(false);
@@ -17,8 +17,10 @@ const Navbar = () => {
     const { isAuthenticated, clearAuth } = useAuthStore();
     const navigate = useNavigate();
     const location = useLocation();
+    const [isFetchModalOpen, setIsFetchModalOpen] = useState(false);
 
     const isLandingPage = location.pathname === '/';
+    const isTriagePage = location.pathname === '/triage';
 
     useEffect(() => {
         const handleScroll = () => setScrolled(window.scrollY > 20);
@@ -47,7 +49,8 @@ const Navbar = () => {
     };
 
     return (
-        <nav
+        <>
+            <nav
             className={cn(
                 'fixed inset-x-0 top-0 z-50 transition-all duration-300',
                 scrolled ? 'bg-white/80 backdrop-blur-md shadow-sm py-4' : 'bg-transparent py-6'
@@ -58,9 +61,6 @@ const Navbar = () => {
                     className="flex items-center gap-3 cursor-pointer"
                     onClick={handleLogoClick}
                 >
-                    <div className="flex h-10 w-10 items-center justify-center overflow-hidden">
-                        <img src={logoImg} alt="Arrange Box Logo" className="h-full w-full object-contain" />
-                    </div>
                     <span className="text-2xl font-bold tracking-tight text-neutral-900">
                         Arrange Box
                     </span>
@@ -77,13 +77,24 @@ const Navbar = () => {
                     )}
 
                     {isAuthenticated ? (
-                        <button
-                            onClick={handleLogout}
-                            className="flex items-center gap-2 text-sm font-semibold text-neutral-600 hover:text-orange-500 transition-colors px-4 py-2 rounded-full hover:bg-orange-50"
-                        >
-                            <LogOut size={16} />
-                            로그아웃
-                        </button>
+                        <>
+                            {isTriagePage && (
+                                <button
+                                    onClick={() => setIsFetchModalOpen(true)}
+                                    className="flex items-center gap-2 text-sm font-semibold text-neutral-600 hover:text-emerald-600 transition-colors px-4 py-2 rounded-full hover:bg-emerald-50"
+                                >
+                                    <CloudDownload size={16} />
+                                    메일 다시 가져오기
+                                </button>
+                            )}
+                            <button
+                                onClick={handleLogout}
+                                className="flex items-center gap-2 text-sm font-semibold text-neutral-600 hover:text-orange-500 transition-colors px-4 py-2 rounded-full hover:bg-orange-50"
+                            >
+                                <LogOut size={16} />
+                                로그아웃
+                            </button>
+                        </>
                     ) : (
                         <button
                             onClick={login}
@@ -119,13 +130,24 @@ const Navbar = () => {
                         )}
 
                         {isAuthenticated ? (
-                            <button
-                                onClick={handleLogout}
-                                className="mt-4 flex items-center justify-center gap-2 rounded-xl bg-neutral-100 px-5 py-3 text-base font-semibold text-neutral-700 w-full"
-                            >
-                                <LogOut size={18} />
-                                로그아웃
-                            </button>
+                            <>
+                                {isTriagePage && (
+                                    <button
+                                        onClick={() => { setIsFetchModalOpen(true); setIsOpen(false); }}
+                                        className="mt-4 flex items-center justify-center gap-2 rounded-xl bg-neutral-100 px-5 py-3 text-base font-semibold text-neutral-700 w-full"
+                                    >
+                                        <CloudDownload size={18} />
+                                        메일 다시 가져오기
+                                    </button>
+                                )}
+                                <button
+                                    onClick={handleLogout}
+                                    className="mt-2 flex items-center justify-center gap-2 rounded-xl bg-neutral-100 px-5 py-3 text-base font-semibold text-neutral-700 w-full"
+                                >
+                                    <LogOut size={18} />
+                                    로그아웃
+                                </button>
+                            </>
                         ) : (
                             <button
                                 onClick={login}
@@ -139,6 +161,8 @@ const Navbar = () => {
                 )}
             </AnimatePresence>
         </nav>
+            <FetchEmailModal isOpen={isFetchModalOpen} onClose={() => setIsFetchModalOpen(false)} />
+        </>
     );
 };
 
