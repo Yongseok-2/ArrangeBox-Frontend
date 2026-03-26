@@ -52,6 +52,7 @@ const executeLabelAction = async (payload: {
 
 
 const tabLabelMap: Record<string, string> = {
+    'all': '전체',
     'unread': '안 읽은',
     'read': '읽은',
     'important': '중요',
@@ -61,14 +62,14 @@ const tabLabelMap: Record<string, string> = {
 
 // 카테고리 한글 라벨 맵
 const categoryLabelMap: Record<string, string> = {
-    work_action:       '업무 / 액션',
-    finance_billing:   '금융 / 청구',
-    account_security:  '계정 / 보안',
+    work_action: '업무 / 액션',
+    finance_billing: '금융 / 청구',
+    account_security: '계정 / 보안',
     shopping_delivery: '쇼핑 / 배송',
-    newsletter_promo:  '뉴스레터 / 프로모션',
-    social_community:  '소셜 / 커뮤니티',
-    personal:          '개인',
-    other:             '기타',
+    newsletter_promo: '뉴스레터 / 프로모션',
+    social_community: '소셜 / 커뮤니티',
+    personal: '개인',
+    other: '기타',
 };
 
 // 날짜 포맷 헬퍼 (예: 25.12.03)
@@ -97,10 +98,11 @@ const checkDateFilter = (isoString: string | undefined, filter: string) => {
 };
 
 export default function TriagePage() {
-    const [activeTab, setActiveTab] = useState('unread');
+    const [activeTab, setActiveTab] = useState('all');
     const [dateFilter, setDateFilter] = useState<'all' | '1m' | '3m' | '6m' | '1y'>('all');
     const [selectedMails, setSelectedMails] = useState<BasketItem[]>([]);
     const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
+    const [expandedMainGroups, setExpandedMainGroups] = useState<string[]>([]);
     const [failedQueue, setFailedQueue] = useState<BasketItem[]>([]);
     const [trashSuccess, setTrashSuccess] = useState(false);
     const [actionError, setActionError] = useState(false); // API 에러 알림
@@ -111,6 +113,15 @@ export default function TriagePage() {
     const [viewMode, setViewMode] = useState<'sender' | 'category'>('sender');
     const accountId = useAuthStore((state) => state.accountId);
     const queryClient = useQueryClient(); // 뮣테이션 성공 후 쿼리 무효화용
+
+    // 메칭 메인 그룹 토글 함수
+    const toggleMainGroup = (groupId: string) => {
+        setExpandedMainGroups(prev =>
+            prev.includes(groupId)
+                ? prev.filter(id => id !== groupId)
+                : [...prev, groupId]
+        );
+    };
 
     // 바구니 상태 - Zustand store (탭 전환/리마운트 시에도 유지)
     const { basket, addAll, removeBySender, removeById, restoreItems } = useBasketStore();
@@ -131,8 +142,8 @@ export default function TriagePage() {
         queryFn: async () => {
             const response = await apiClient.post('/emails/triage/preview-db', {
                 account_id: accountId,  // 필수: 계정별 데이터 조회
-                max_unread: 200,
-                max_read: 200,
+                max_unread: 1000,
+                max_read: 1000,
             });
             return response.data;
         },
@@ -140,8 +151,84 @@ export default function TriagePage() {
     });
 
     const buckets = data?.buckets || [];
-    const currentBucket = buckets.find((b: any) => b.bucket === activeTab) || { count: 0, label_groups: [] };
-    const displayItems = currentBucket.label_groups.length > 0 ? currentBucket.label_groups : [];
+
+    // 1. 모든 버킷에서 유니크한 메일 정보 추출하여 전역 마스터 리스트 생성
+    const allMailsMap = new Map<string, any>();
+    const bucketIdSets: Record<string, Set<string>> = {};
+
+    buckets.forEach((b: any) => {
+        const idsInThisBucket = new Set<string>();
+        b.label_groups?.forEach((lg: any) => {
+            lg.senders?.forEach((sg: any) => {
+                sg.categories?.forEach((cat: any) => {
+                    cat.message_ids?.forEach((id: string, idx: number) => {
+                        idsInThisBucket.add(id);
+                        if (!allMailsMap.has(id)) {
+                            allMailsMap.set(id, {
+                                id,
+                                sender: sg.sender,
+                                subject: cat.sample_subjects?.[idx] || '',
+                                date: cat.message_dates?.[idx],
+                                category: cat.category || 'other'
+                            });
+                        }
+                    });
+                });
+            });
+        });
+        bucketIdSets[b.bucket] = idsInThisBucket;
+    });
+
+    const masterMails = Array.from(allMailsMap.values());
+
+    // 2. 현재 선택된 탭에 실시간으로 필터링된 메일 리스트 생성
+    const currentTabMails = activeTab === 'all'
+        ? masterMails.filter(m => bucketIdSets['unread']?.has(m.id) || bucketIdSets['read']?.has(m.id))
+        : masterMails.filter(m => bucketIdSets[activeTab]?.has(m.id));
+
+    // 3. 기존 UI 구조(label_groups)에 맞게 데이터 재구성
+    const rebuildDisplayItems = (mails: any[]) => {
+        if (mails.length === 0) return [];
+        const senderMap = new Map<string, any>();
+        mails.forEach(m => {
+            let sg = senderMap.get(m.sender);
+            if (!sg) {
+                sg = { sender: m.sender, count: 0, categories: [] };
+                senderMap.set(m.sender, sg);
+            }
+            let cat = sg.categories.find((c: any) => c.category === m.category);
+            if (!cat) {
+                cat = { category: m.category, count: 0, message_ids: [], sample_subjects: [], message_dates: [] };
+                sg.categories.push(cat);
+            }
+            cat.message_ids.push(m.id);
+            cat.sample_subjects.push(m.subject);
+            cat.message_dates.push(m.date);
+            cat.count++;
+            sg.count++;
+        });
+
+        return [{
+            label_group: 'normal',
+            count: mails.length,
+            senders: Array.from(senderMap.values())
+        }];
+    };
+
+    const displayItems = rebuildDisplayItems(currentTabMails);
+
+    // '전체' 탭인 경우, 서버의 total_count가 중복(안 읽음+별표 등)을 포함할 수 있으므로 
+    // ID 기준으로 중복이 제거된 데이터의 개수를 우선 사용합니다.
+    const unreadCount = buckets.find((b: any) => b.bucket === 'unread')?.count || 0;
+    const readCount = buckets.find((b: any) => b.bucket === 'read')?.count || 0;
+    const serverTotalUnique = unreadCount + readCount;
+
+    // 실제 표시되는 마스터 리스트 리스트의 개수 (안 읽음 + 읽은 고유 ID 기준)
+    const allUniqueCount = masterMails.filter(m => bucketIdSets['unread']?.has(m.id) || bucketIdSets['read']?.has(m.id)).length;
+
+    const currentBucketCount = activeTab === 'all'
+        ? (serverTotalUnique || allUniqueCount)
+        : currentTabMails.length;
 
     // ------- 주요 라벨(중요, 별표) ID 추출 -------
     const importantIds = new Set<string>();
@@ -156,23 +243,22 @@ export default function TriagePage() {
     });
 
     // ------- 카테고리 뷰용 데이터 변환 -------
-    // displayItems를 카테고리 기준으로 평탄화
     const categoryGroups: Record<string, BasketItem[]> = {};
-    displayItems.forEach((group: any) => {
-        group.senders.forEach((senderGroup: any) => {
-            senderGroup.categories.forEach((cat: any) => {
-                const label = cat.category || 'other';
-                if (!categoryGroups[label]) categoryGroups[label] = [];
-                cat.sample_subjects.forEach((subject: string, idx: number) => {
-                    const id = cat.message_ids?.[idx] || `${senderGroup.sender}-${label}-${idx}`;
-                    const date = cat.message_dates?.[idx];
-                    // 바구니·낙관적 숨김 제외 및 날짜 필터링 적용
-                    if (!basket.some(b => b.id === id) && !executedIds.has(id) && checkDateFilter(date, dateFilter)) {
-                        categoryGroups[label].push({ subject, id, sender: senderGroup.sender, category: label, date });
-                    }
-                });
+    currentTabMails.forEach((mail: any) => {
+        const id = mail.id;
+        const date = mail.date;
+        const label = mail.category || 'other';
+
+        if (!basket.some(b => b.id === id) && !executedIds.has(id) && checkDateFilter(date, dateFilter)) {
+            if (!categoryGroups[label]) categoryGroups[label] = [];
+            categoryGroups[label].push({
+                id,
+                subject: mail.subject,
+                sender: mail.sender,
+                category: label,
+                date
             });
-        });
+        }
     });
     const categoryEntries = Object.entries(categoryGroups).filter(([, mails]) => mails.length > 0);
 
@@ -185,6 +271,25 @@ export default function TriagePage() {
     const addAllToBasket = (items: BasketItem[]) => {
         addAll(items);  // store action으로 중복 제거 후 추가
         setSelectedMails(prev => prev.filter(sm => !items.some(newItem => newItem.id === sm.id)));
+    };
+
+    // 현재 탭 + 기간 필터 기준 모든 메일을 바구니에 담기
+    const addAllCurrentTabToBasket = () => {
+        const allItems: BasketItem[] = [];
+        currentTabMails.forEach((mail: any) => {
+            const id = mail.id;
+            const date = mail.date;
+            if (!basket.some(b => b.id === id) && !executedIds.has(id) && checkDateFilter(date, dateFilter)) {
+                allItems.push({
+                    id,
+                    subject: mail.subject,
+                    sender: mail.sender,
+                    category: mail.category || 'other',
+                    date
+                });
+            }
+        });
+        addAllToBasket(allItems);
     };
 
     const addSelectedToBasket = () => {
@@ -267,7 +372,7 @@ export default function TriagePage() {
             executeLabelAction({ account_id: accountId || '', message_ids: ids, add_label_ids: addLabels, remove_label_ids: removeLabels || [] }),
         onMutate: async ({ ids, addLabels, removeLabels }) => {
             const actingItems = basket.filter(item => ids.includes(item.id));
-            
+
             // 바구니에서만 제거 (중앙 목록에는 남김)
             ids.forEach(id => removeById(id));
 
@@ -287,26 +392,26 @@ export default function TriagePage() {
                             bucket = { bucket: bucketName, count: 0, label_groups: [] };
                             newData.buckets.push(bucket);
                         }
-                        
+
                         actingItems.forEach(item => {
                             let lg = bucket.label_groups.find((l: any) => l.label_group === 'normal');
                             if (!lg) {
                                 lg = { label_group: 'normal', count: 0, senders: [] };
                                 bucket.label_groups.push(lg);
                             }
-                            
+
                             let sender = lg.senders.find((s: any) => s.sender === item.sender);
                             if (!sender) {
                                 sender = { sender: item.sender, count: 0, categories: [] };
                                 lg.senders.push(sender);
                             }
-                            
+
                             let category = sender.categories.find((c: any) => c.category === (item.category || 'other'));
                             if (!category) {
                                 category = { category: item.category || 'other', count: 0, message_ids: [], sample_subjects: [] };
                                 sender.categories.push(category);
                             }
-                            
+
                             if (!category.message_ids?.includes(item.id)) {
                                 category.message_ids = category.message_ids || [];
                                 category.message_ids.push(item.id);
@@ -351,9 +456,9 @@ export default function TriagePage() {
                     };
 
                     if (addLabels?.includes('IMPORTANT')) addToBucket('important');
-                    if (addLabels?.includes('STARRED'))   addToBucket('starred');
+                    if (addLabels?.includes('STARRED')) addToBucket('starred');
                     if (removeLabels?.includes('IMPORTANT')) removeFromBucket('important');
-                    if (removeLabels?.includes('STARRED'))   removeFromBucket('starred');
+                    if (removeLabels?.includes('STARRED')) removeFromBucket('starred');
 
                     return newData;
                 });
@@ -368,7 +473,7 @@ export default function TriagePage() {
                     item => result.failed_ids.includes(item.id)
                 );
                 restoreItems(failedItems);
-                
+
                 // 일부 성공한 메일은 유지 → 성공 알림 표시
                 const successCount = (context?.actingItems?.length || 0) - failedItems.length;
                 if (successCount > 0) {
@@ -404,7 +509,7 @@ export default function TriagePage() {
     const toggleAction = (action: string) => {
         setSelectedActions(prev => {
             const next = new Set(prev);
-            
+
             // 삭제(trash) 선택 시 다른 모든 라벨 해제 및 토글
             if (action === 'trash') {
                 if (next.has('trash')) {
@@ -424,11 +529,11 @@ export default function TriagePage() {
             } else {
                 // 삭제 모드 해제 후 라벨 액션 추가
                 next.delete('trash');
-                
+
                 // 충돌 방지: 추가 그룹과 제거 그룹은 동시에 선택 불가
-                if (isAdd)    Array.from(next).forEach(a => { if (a.startsWith('remove:')) next.delete(a); });
-                if (isRemove) Array.from(next).forEach(a => { if (a.startsWith('add:'))    next.delete(a); });
-                
+                if (isAdd) Array.from(next).forEach(a => { if (a.startsWith('remove:')) next.delete(a); });
+                if (isRemove) Array.from(next).forEach(a => { if (a.startsWith('add:')) next.delete(a); });
+
                 next.add(action);
             }
             return next;
@@ -436,8 +541,8 @@ export default function TriagePage() {
     };
 
     // 선택된 액션 도우미 값
-    const isTrashMode    = selectedActions.has('trash');
-    const hasAddActions  = Array.from(selectedActions).some(a => a.startsWith('add:'));
+    const isTrashMode = selectedActions.has('trash');
+    const hasAddActions = Array.from(selectedActions).some(a => a.startsWith('add:'));
     const hasRemoveActions = Array.from(selectedActions).some(a => a.startsWith('remove:'));
 
     // 실행 버튼 클릭 → 모달 오픈
@@ -455,10 +560,10 @@ export default function TriagePage() {
         } else {
             const addLabels: string[] = [];
             const removeLabels: string[] = [];
-            if (selectedActions.has('add:IMPORTANT'))    addLabels.push('IMPORTANT');
-            if (selectedActions.has('add:STARRED'))      addLabels.push('STARRED');
+            if (selectedActions.has('add:IMPORTANT')) addLabels.push('IMPORTANT');
+            if (selectedActions.has('add:STARRED')) addLabels.push('STARRED');
             if (selectedActions.has('remove:IMPORTANT')) removeLabels.push('IMPORTANT');
-            if (selectedActions.has('remove:STARRED'))   removeLabels.push('STARRED');
+            if (selectedActions.has('remove:STARRED')) removeLabels.push('STARRED');
             labelMutation.mutate({ ids, addLabels, removeLabels });
         }
     };
@@ -486,13 +591,13 @@ export default function TriagePage() {
         if (hasAddActions) {
             const tags: string[] = [];
             if (selectedActions.has('add:IMPORTANT')) tags.push('중요');
-            if (selectedActions.has('add:STARRED'))   tags.push('별표');
+            if (selectedActions.has('add:STARRED')) tags.push('별표');
             return { title: `${tags.join(' + ')} 표시를 추가할까요?`, desc: `선택한 ${basket.length}통에 ${tags.join(', ')} 라벨을 추가합니다.`, color: 'amber' as const, icon: <AlertCircle size={22} /> };
         }
         if (hasRemoveActions) {
             const tags: string[] = [];
             if (selectedActions.has('remove:IMPORTANT')) tags.push('중요');
-            if (selectedActions.has('remove:STARRED'))   tags.push('별표');
+            if (selectedActions.has('remove:STARRED')) tags.push('별표');
             return { title: `${tags.join(' + ')} 표시를 제거할까요?`, desc: `선택한 ${basket.length}통에서 ${tags.join(', ')} 라벨을 제거합니다.`, color: 'yellow' as const, icon: <X size={22} /> };
         }
         return { title: '작업을 실행할까요?', desc: `선택한 ${basket.length}통의 메일에 의요.`, color: 'emerald' as const, icon: <Tag size={22} /> };
@@ -573,11 +678,11 @@ export default function TriagePage() {
                     </div>
 
                     <nav className="flex flex-col gap-1.5">
-                        <SidebarBtn icon={<Mail size={18} />} label="안 읽음" active={activeTab === 'unread'} onClick={() => { setActiveTab('unread'); setSelectedMails([]); }} count={buckets.find((b: any) => b.bucket === 'unread')?.count} />
-                        <SidebarBtn icon={<Inbox size={18} />} label="읽음" active={activeTab === 'read'} onClick={() => { setActiveTab('read'); setSelectedMails([]); }} count={buckets.find((b: any) => b.bucket === 'read')?.count} />
-                        <SidebarBtn icon={<AlertCircle size={18} />} label="중요" active={activeTab === 'important'} onClick={() => { setActiveTab('important'); setSelectedMails([]); }} count={buckets.find((b: any) => b.bucket === 'important')?.count} />
-                        <SidebarBtn icon={<Star size={18} />} label="별표" active={activeTab === 'starred'} onClick={() => { setActiveTab('starred'); setSelectedMails([]); }} count={buckets.find((b: any) => b.bucket === 'starred')?.count} />
-                        {/* <SidebarBtn icon={<Tag size={18} />} label="라벨됨" active={activeTab === 'label'} onClick={() => { setActiveTab('label'); setSelectedMails([]); }} count={buckets.find((b: any) => b.bucket === 'label')?.count} /> */}
+                        <SidebarBtn icon={<Inbox size={18} />} label="전체" active={activeTab === 'all'} onClick={() => { setActiveTab('all'); setSelectedMails([]); }} count={allUniqueCount} />
+                        <SidebarBtn icon={<Mail size={18} />} label="안 읽음" active={activeTab === 'unread'} onClick={() => { setActiveTab('unread'); setSelectedMails([]); }} count={bucketIdSets['unread']?.size || 0} />
+                        <SidebarBtn icon={<CheckCircle2 size={18} />} label="읽음" active={activeTab === 'read'} onClick={() => { setActiveTab('read'); setSelectedMails([]); }} count={bucketIdSets['read']?.size || 0} />
+                        <SidebarBtn icon={<AlertCircle size={18} />} label="중요" active={activeTab === 'important'} onClick={() => { setActiveTab('important'); setSelectedMails([]); }} count={bucketIdSets['important']?.size || 0} />
+                        <SidebarBtn icon={<Star size={18} />} label="별표" active={activeTab === 'starred'} onClick={() => { setActiveTab('starred'); setSelectedMails([]); }} count={bucketIdSets['starred']?.size || 0} />
                     </nav>
 
                     <div className="mt-auto pt-6">
@@ -597,14 +702,12 @@ export default function TriagePage() {
                             <h1 className="text-4xl text-neutral-900 tracking-tight flex items-center gap-2 mb-3" style={{ fontWeight: 700 }}>
                                 나의 <span className="text-emerald-500 text-transparent bg-clip-text bg-gradient-to-r from-emerald-500 to-emerald-400">메일</span>보관함
                             </h1>
-                            <p className="text-neutral-500 text-[15px]">
-                                AI가 <strong className="text-neutral-900">{currentBucket.count}개의 {tabLabelMap[activeTab] || '메시지'}</strong> 메일을 분류했습니다.
-                            </p>
                         </div>
+
                         <div className="bg-emerald-50 rounded-[2rem] px-8 py-3.5 flex flex-col items-end relative overflow-hidden shadow-sm">
                             <span className="text-[10px] font-bold text-emerald-600 mb-0.5 z-10 w-full text-left">성장 지표</span>
                             <div className="flex items-center gap-2 z-10">
-                                <span className="text-3xl font-black text-emerald-600 tracking-tight">{((data?.total_count || 0) * 0.4).toFixed(1)}<span className="text-lg tracking-normal font-bold">g CO2</span></span>
+                                <span className="text-3xl font-black text-emerald-600 tracking-tight">{((serverTotalUnique || allUniqueCount) * 0.4).toFixed(1)}<span className="text-lg tracking-normal font-bold">g CO2</span></span>
                                 <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30">
                                     <Leaf size={14} />
                                 </div>
@@ -613,8 +716,9 @@ export default function TriagePage() {
                         </div>
                     </div>
 
-                    {/* -------- 상단 조작부: 보기 모드 및 기간 필터 -------- */}
-                    <div className="flex justify-between items-center w-full max-w-4xl mb-6">
+                    {/* -------- 행1: 보기 모드 & 탭 전체 담기 -------- */}
+                    <div className="flex justify-between items-center w-full max-w-4xl mb-3">
+                        {/* 보기 모드 */}
                         <div className="flex items-center gap-2">
                             <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mr-2">보기 모드</span>
                             <button
@@ -641,9 +745,59 @@ export default function TriagePage() {
                             </button>
                         </div>
 
+                        {/* 탭 전체 담기 */}
+                        {!isLoading && !isError && displayItems.length > 0 && (
+                            <div className="flex items-center gap-3">
+                                <p className="text-[12px] text-neutral-400">
+                                    현재 탭의 메일을 한 번에 바구니에 담습니다.
+                                    {dateFilter !== 'all' && <span className="text-emerald-600 font-bold ml-1">(기간 필터 적용 중)</span>}
+                                </p>
+                                <button
+                                    onClick={addAllCurrentTabToBasket}
+                                    className="flex items-center gap-2 bg-neutral-900 hover:bg-emerald-700 text-white px-5 py-2 rounded-full text-[12px] font-bold transition-all shadow-sm flex-shrink-0"
+                                >
+                                    <Inbox size={14} />
+                                    {tabLabelMap[activeTab] || '현재 탭'} 메일 전체 담기
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* -------- 행2: 총 메일 개수 & 기간 필터 -------- */}
+                    <div className="flex justify-between items-center w-full max-w-4xl mb-6">
+                        {/* 총 메일 개수 (+ 필터 기준 개수) */}
+                        <div className="flex items-center gap-3">
+                            <p className="text-neutral-500 text-[13px]">
+                                총 <strong className="text-neutral-900">{currentBucketCount}개</strong>의 {tabLabelMap[activeTab] || '메시지'} 메일
+                            </p>
+                            {(() => {
+                                if (dateFilter === 'all') return null;
+                                const filteredIds = new Set<string>();
+                                displayItems.forEach((group: any) => {
+                                    group.senders.forEach((senderGroup: any) => {
+                                        senderGroup.categories.forEach((cat: any) => {
+                                            cat.sample_subjects.forEach((_: string, idx: number) => {
+                                                const id = cat.message_ids?.[idx] || `${senderGroup.sender}-${idx}`;
+                                                const date = cat.message_dates?.[idx];
+                                                if (!basket.some(b => b.id === id) && !executedIds.has(id) && checkDateFilter(date, dateFilter)) {
+                                                    filteredIds.add(id);
+                                                }
+                                            });
+                                        });
+                                    });
+                                });
+                                return (
+                                    <span className="text-neutral-400 text-[13px]">
+                                        · 필터 기준 <strong className="text-neutral-600">{filteredIds.size}개</strong> 표시 중
+                                    </span>
+                                );
+                            })()}
+                        </div>
+
+                        {/* 기간 필터 */}
                         <div className="flex items-center gap-2">
                             <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mr-2">기간 필터</span>
-                            <select 
+                            <select
                                 value={dateFilter}
                                 onChange={(e) => setDateFilter(e.target.value as any)}
                                 className="bg-white border border-neutral-200 text-neutral-600 text-[12px] font-bold px-3 py-1.5 rounded-full outline-none hover:border-neutral-300 focus:border-emerald-500 transition-colors shadow-sm cursor-pointer"
@@ -693,6 +847,8 @@ export default function TriagePage() {
                                             checkDateFilter(m.date, dateFilter)
                                         );
                                         if (availableMails.length === 0) return null;
+                                        const isExpanded = expandedMainGroups.includes(senderGroup.sender);
+
                                         return (
                                             <motion.div
                                                 key={`${group.label_group}-${senderGroup.sender}`}
@@ -701,15 +857,22 @@ export default function TriagePage() {
                                                 exit={{ opacity: 0, scale: 0.95 }}
                                                 transition={{ duration: 0.3, delay: i * 0.05 }}
                                             >
-                                                {/* Sender Group Info */}
-                                                <div className="flex justify-between items-center mb-4 pl-2 pr-4">
+                                                {/* Sender Group Info (Header) */}
+                                                <div
+                                                    onClick={() => toggleMainGroup(senderGroup.sender)}
+                                                    className="flex justify-between items-center mb-1 pl-2 pr-4 bg-white/60 hover:bg-white p-4 rounded-[2rem] border border-neutral-200/50 hover:border-emerald-200/60 transition-all cursor-pointer group/header shadow-[0_2px_10px_rgba(0,0,0,0.02)] hover:shadow-[0_4px_15px_rgba(0,0,0,0.04)]"
+                                                >
                                                     <div className="flex items-center gap-4">
-                                                        <div className="w-11 h-11 rounded-full bg-white border border-neutral-200/60 shadow-sm flex items-center justify-center text-neutral-400">
+                                                        <div className="w-11 h-11 rounded-full bg-white border border-neutral-200/60 shadow-sm flex items-center justify-center text-neutral-400 group-hover/header:text-emerald-500 transition-colors">
                                                             <User size={20} />
                                                         </div>
                                                         <div>
                                                             <h3 className="text-[17px] font-bold text-neutral-900 flex items-center gap-2">
                                                                 {senderGroup.sender}
+                                                                <ChevronDown
+                                                                    size={16}
+                                                                    className={cn("text-neutral-300 transition-transform duration-300", isExpanded && "rotate-180 text-emerald-500")}
+                                                                />
                                                             </h3>
                                                             <p className="text-[11px] text-neutral-400 font-medium mt-0.5">발신자 그룹</p>
                                                         </div>
@@ -717,144 +880,181 @@ export default function TriagePage() {
                                                     <div className="flex items-center gap-4">
                                                         <span className="text-xs font-bold text-neutral-400">{String(availableMails.length).padStart(2, '0')} 통</span>
                                                         <button
-                                                            onClick={() => addAllToBasket(availableMails)}
+                                                            onClick={(e) => { e.stopPropagation(); addAllToBasket(availableMails); }}
                                                             className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-full text-[13px] font-bold flex items-center gap-2 transition-colors shadow-sm"
                                                         >
                                                             <Inbox size={16} /> 전체 담기
                                                         </button>
                                                     </div>
                                                 </div>
-                                                <div className="bg-white rounded-[2rem] p-4 shadow-sm border border-neutral-100/80 flex flex-col gap-2">
-                                                    {availableMails.map((mail: BasketItem) => {
-                                                        const isSelected = selectedMails.some(m => m.id === mail.id);
-                                                        return (
-                                                            <div
-                                                                key={mail.id}
-                                                                onClick={() => toggleSelection(mail)}
-                                                                className={cn(
-                                                                    "flex items-center px-4 py-3.5 rounded-2xl transition-all cursor-pointer group/mail border",
-                                                                    isSelected
-                                                                        ? "bg-emerald-50 shadow-[0_2px_8px_rgba(16,185,129,0.15)] border-emerald-400"
-                                                                        : "bg-neutral-50/50 hover:bg-white border-transparent hover:border-neutral-200"
-                                                                )}
-                                                            >
-                                                                <a
-                                                                    title="새 창에서 메일 원문 열기"
-                                                                    href={`https://mail.google.com/mail/u/0/#all/${mail.id}`}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    onClick={(e) => e.stopPropagation()}
-                                                                    className="w-[22px] h-[22px] rounded-full border flex flex-shrink-0 items-center justify-center mr-3 transition-all z-10 shadow-sm border-neutral-200 bg-white text-neutral-300 hover:border-emerald-500 hover:text-emerald-500"
-                                                                >
-                                                                    <ExternalLink size={12} strokeWidth={2.5} />
-                                                                </a>
-                                                                {/* 라벨 아이콘 (중요 / 별표) */}
-                                                                {(importantIds.has(mail.id) || starredIds.has(mail.id)) && (
-                                                                    <div className="flex gap-1 mr-3 flex-shrink-0 mt-0.5">
-                                                                        {importantIds.has(mail.id) && <span title="중요"><AlertCircle size={14} className="text-amber-500" /></span>}
-                                                                        {starredIds.has(mail.id) && <span title="별표"><Star size={14} className="text-yellow-400 fill-yellow-400" /></span>}
-                                                                    </div>
-                                                                )}
-                                                                <div className="flex-1 truncate text-[14px] text-neutral-700 pr-4">{mail.subject}</div>
-                                                                {mail.date && <span className="text-[11px] text-neutral-400 font-medium flex-shrink-0 tracking-wider tabular-nums">{formatMailDate(mail.date)}</span>}
-                                                                <button
-                                                                    onClick={(e) => { e.stopPropagation(); addAllToBasket([mail]); }}
-                                                                    className="opacity-0 group-hover/mail:opacity-100 focus:opacity-100 bg-white border border-neutral-200 text-neutral-600 hover:text-emerald-600 hover:border-emerald-600 rounded-full px-4 py-1.5 text-xs font-bold transition-all ml-4 flex-shrink-0 shadow-sm"
-                                                                >
-                                                                    담기
-                                                                </button>
+
+                                                {/* Emails inside sender group */}
+                                                <AnimatePresence>
+                                                    {isExpanded && (
+                                                        <motion.div
+                                                            initial={{ height: 0, opacity: 0 }}
+                                                            animate={{ height: 'auto', opacity: 1 }}
+                                                            exit={{ height: 0, opacity: 0 }}
+                                                            transition={{ duration: 0.3, ease: 'easeInOut' }}
+                                                            className="overflow-hidden mt-3"
+                                                        >
+                                                            <div className="bg-white/80 backdrop-blur-sm rounded-[2rem] p-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-neutral-200/60 flex flex-col gap-2">
+                                                                {availableMails.map((mail: BasketItem) => {
+                                                                    const isSelected = selectedMails.some(m => m.id === mail.id);
+                                                                    return (
+                                                                        <div
+                                                                            key={mail.id}
+                                                                            onClick={() => toggleSelection(mail)}
+                                                                            className={cn(
+                                                                                "flex items-center px-4 py-3.5 rounded-2xl transition-all cursor-pointer group/mail border",
+                                                                                isSelected
+                                                                                    ? "bg-emerald-50 shadow-[0_2px_8px_rgba(16,185,129,0.15)] border-emerald-400"
+                                                                                    : "bg-neutral-50/50 hover:bg-white border-transparent hover:border-neutral-200"
+                                                                            )}
+                                                                        >
+                                                                            <a
+                                                                                title="새 창에서 메일 원문 열기"
+                                                                                href={`https://mail.google.com/mail/u/0/#all/${mail.id}`}
+                                                                                target="_blank"
+                                                                                rel="noopener noreferrer"
+                                                                                onClick={(e) => e.stopPropagation()}
+                                                                                className="w-[22px] h-[22px] rounded-full border flex flex-shrink-0 items-center justify-center mr-3 transition-all z-10 shadow-sm border-neutral-200 bg-white text-neutral-300 hover:border-emerald-500 hover:text-emerald-500"
+                                                                            >
+                                                                                <ExternalLink size={12} strokeWidth={2.5} />
+                                                                            </a>
+                                                                            {/* 라벨 아이콘 (중요 / 별표) */}
+                                                                            {(importantIds.has(mail.id) || starredIds.has(mail.id)) && (
+                                                                                <div className="flex gap-1 mr-3 flex-shrink-0 mt-0.5">
+                                                                                    {importantIds.has(mail.id) && <span title="중요"><AlertCircle size={14} className="text-amber-500" /></span>}
+                                                                                    {starredIds.has(mail.id) && <span title="별표"><Star size={14} className="text-yellow-400 fill-yellow-400" /></span>}
+                                                                                </div>
+                                                                            )}
+                                                                            <div className="flex-1 truncate text-[14px] text-neutral-700 pr-4">{mail.subject}</div>
+                                                                            {mail.date && <span className="text-[11px] text-neutral-400 font-medium flex-shrink-0 tracking-wider tabular-nums">{formatMailDate(mail.date)}</span>}
+                                                                            <button
+                                                                                onClick={(e) => { e.stopPropagation(); addAllToBasket([mail]); }}
+                                                                                className="opacity-0 group-hover/mail:opacity-100 focus:opacity-100 bg-white border border-neutral-200 text-neutral-600 hover:text-emerald-600 hover:border-emerald-600 rounded-full px-4 py-1.5 text-xs font-bold transition-all ml-4 flex-shrink-0 shadow-sm"
+                                                                            >
+                                                                                담기
+                                                                            </button>
+                                                                        </div>
+                                                                    );
+                                                                })}
                                                             </div>
-                                                        );
-                                                    })}
-                                                </div>
+                                                        </motion.div>
+                                                    )}
+                                                </AnimatePresence>
                                             </motion.div>
                                         );
                                     })
                                 )}
 
                                 {/* ======== 카테고리 별 보기 ======== */}
-                                {viewMode === 'category' && categoryEntries.map(([category, mails], i) => (
-                                    <motion.div
-                                        key={`cat-${category}`}
-                                        initial={{ opacity: 0, y: 20 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, scale: 0.95 }}
-                                        transition={{ duration: 0.3, delay: i * 0.05 }}
-                                    >
-                                        {/* Category Group Header */}
-                                        <div className="flex justify-between items-center mb-4 pl-2 pr-4">
-                                            <div className="flex items-center gap-4">
-                                                <div className="w-11 h-11 rounded-full bg-neutral-900 border border-neutral-700 shadow-sm flex items-center justify-center text-white">
-                                                    <Tag size={18} />
-                                                </div>
-                                                <div>
-                                                    <h3 className="text-[17px] font-bold text-neutral-900">
-                                                        {categoryLabelMap[category] || category}
-                                                    </h3>
-                                                    <p className="text-[11px] text-neutral-400 font-medium mt-0.5">카테고리 그룹</p>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-4">
-                                                <span className="text-xs font-bold text-neutral-400">{String(mails.length).padStart(2, '0')} 통</span>
-                                                <button
-                                                    onClick={() => addAllToBasket(mails)}
-                                                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-full text-[13px] font-bold flex items-center gap-2 transition-colors shadow-sm"
-                                                >
-                                                    <Inbox size={16} /> 전체 담기
-                                                </button>
-                                            </div>
-                                        </div>
+                                {viewMode === 'category' && categoryEntries.map(([category, mails], i) => {
+                                    const isExpanded = expandedMainGroups.includes(category);
 
-                                        {/* Emails inside category group */}
-                                        <div className="bg-white rounded-[2rem] p-4 shadow-sm border border-neutral-100/80 flex flex-col gap-2">
-                                            {mails.map((mail: BasketItem) => {
-                                                const isSelected = selectedMails.some(m => m.id === mail.id);
-                                                return (
-                                                    <div
-                                                        key={mail.id}
-                                                        onClick={() => toggleSelection(mail)}
-                                                        className={cn(
-                                                            "flex items-center px-4 py-3.5 rounded-2xl transition-all cursor-pointer group/mail border",
-                                                            isSelected
-                                                                ? "bg-emerald-50 shadow-[0_2px_8px_rgba(16,185,129,0.15)] border-emerald-400"
-                                                                : "bg-neutral-50/50 hover:bg-white border-transparent hover:border-neutral-200"
-                                                        )}
-                                                    >
-                                                        <a
-                                                            title="새 창에서 메일 원문 열기"
-                                                            href={`https://mail.google.com/mail/u/0/#all/${mail.id}`}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            onClick={(e) => e.stopPropagation()}
-                                                            className="w-[22px] h-[22px] rounded-full border flex flex-shrink-0 items-center justify-center mr-3 transition-all z-10 shadow-sm border-neutral-200 bg-white text-neutral-300 hover:border-emerald-500 hover:text-emerald-500"
-                                                        >
-                                                            <ExternalLink size={12} strokeWidth={2.5} />
-                                                        </a>
-                                                        {/* 라벨 아이콘 (중요 / 별표) */}
-                                                        {(importantIds.has(mail.id) || starredIds.has(mail.id)) && (
-                                                            <div className="flex gap-1 mr-3 flex-shrink-0 mt-0.5">
-                                                                {importantIds.has(mail.id) && <span title="중요"><Archive size={14} className="text-amber-500" /></span>}
-                                                                {starredIds.has(mail.id) && <span title="별표"><Star size={14} className="text-yellow-400 fill-yellow-400" /></span>}
-                                                            </div>
-                                                        )}
-                                                        {/* 메일 제목 */}
-                                                        <div className="flex-1 truncate text-[14px] text-neutral-700 pr-3">{mail.subject}</div>
-                                                        {/* 날짜 */}
-                                                        {mail.date && <span className="text-[11px] text-neutral-400 font-medium flex-shrink-0 tracking-wider tabular-nums mr-2">{formatMailDate(mail.date)}</span>}
-                                                        {/* 발신자 (카테고리 뷰에서만 표시) */}
-                                                        <span className="text-[11px] text-neutral-400 font-medium flex-shrink-0 mr-3 hidden sm:block truncate max-w-[120px]">{mail.sender}</span>
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); addAllToBasket([mail]); }}
-                                                            className="opacity-0 group-hover/mail:opacity-100 focus:opacity-100 bg-white border border-neutral-200 text-neutral-600 hover:text-emerald-600 hover:border-emerald-600 rounded-full px-4 py-1.5 text-xs font-bold transition-all flex-shrink-0 shadow-sm"
-                                                        >
-                                                            담기
-                                                        </button>
+                                    return (
+                                        <motion.div
+                                            key={`cat-${category}`}
+                                            initial={{ opacity: 0, y: 20 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, scale: 0.95 }}
+                                            transition={{ duration: 0.3, delay: i * 0.05 }}
+                                        >
+                                            {/* Category Group Header */}
+                                            <div
+                                                onClick={() => toggleMainGroup(category)}
+                                                className="flex justify-between items-center mb-1 pl-2 pr-4 bg-white/60 hover:bg-white p-4 rounded-[2rem] border border-neutral-200/50 hover:border-emerald-200/60 transition-all cursor-pointer group/header shadow-[0_2px_10px_rgba(0,0,0,0.02)] hover:shadow-[0_4px_15px_rgba(0,0,0,0.04)]"
+                                            >
+                                                <div className="flex items-center gap-4">
+                                                    <div className="w-11 h-11 rounded-full bg-neutral-900 border border-neutral-700 shadow-sm flex items-center justify-center text-white">
+                                                        <Tag size={18} />
                                                     </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </motion.div>
-                                ))}
+                                                    <div>
+                                                        <h3 className="text-[17px] font-bold text-neutral-900 flex items-center gap-2">
+                                                            {categoryLabelMap[category] || category}
+                                                            <ChevronDown
+                                                                size={16}
+                                                                className={cn("text-neutral-300 transition-transform duration-300", isExpanded && "rotate-180 text-emerald-500")}
+                                                            />
+                                                        </h3>
+                                                        <p className="text-[11px] text-neutral-400 font-medium mt-0.5">카테고리 그룹</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-4">
+                                                    <span className="text-xs font-bold text-neutral-400">{String(mails.length).padStart(2, '0')} 통</span>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); addAllToBasket(mails); }}
+                                                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-full text-[13px] font-bold flex items-center gap-2 transition-colors shadow-sm"
+                                                    >
+                                                        <Inbox size={16} /> 전체 담기
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {/* Emails inside category group */}
+                                            <AnimatePresence>
+                                                {isExpanded && (
+                                                    <motion.div
+                                                        initial={{ height: 0, opacity: 0 }}
+                                                        animate={{ height: 'auto', opacity: 1 }}
+                                                        exit={{ height: 0, opacity: 0 }}
+                                                        transition={{ duration: 0.3, ease: 'easeInOut' }}
+                                                        className="overflow-hidden mt-3"
+                                                    >
+                                                        <div className="bg-white/80 backdrop-blur-sm rounded-[2rem] p-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-neutral-200/60 flex flex-col gap-2">
+                                                            {mails.map((mail: BasketItem) => {
+                                                                const isSelected = selectedMails.some(m => m.id === mail.id);
+                                                                return (
+                                                                    <div
+                                                                        key={mail.id}
+                                                                        onClick={() => toggleSelection(mail)}
+                                                                        className={cn(
+                                                                            "flex items-center px-4 py-3.5 rounded-2xl transition-all cursor-pointer group/mail border",
+                                                                            isSelected
+                                                                                ? "bg-emerald-50 shadow-[0_2px_8px_rgba(16,185,129,0.15)] border-emerald-400"
+                                                                                : "bg-neutral-50/50 hover:bg-white border-transparent hover:border-neutral-200"
+                                                                        )}
+                                                                    >
+                                                                        <a
+                                                                            title="새 창에서 메일 원문 열기"
+                                                                            href={`https://mail.google.com/mail/u/0/#all/${mail.id}`}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                            onClick={(e) => e.stopPropagation()}
+                                                                            className="w-[22px] h-[22px] rounded-full border flex flex-shrink-0 items-center justify-center mr-3 transition-all z-10 shadow-sm border-neutral-200 bg-white text-neutral-300 hover:border-emerald-500 hover:text-emerald-500"
+                                                                        >
+                                                                            <ExternalLink size={12} strokeWidth={2.5} />
+                                                                        </a>
+                                                                        {/* 라벨 아이콘 (중요 / 별표) */}
+                                                                        {(importantIds.has(mail.id) || starredIds.has(mail.id)) && (
+                                                                            <div className="flex gap-1 mr-3 flex-shrink-0 mt-0.5">
+                                                                                {importantIds.has(mail.id) && <span title="중요"><Archive size={14} className="text-amber-500" /></span>}
+                                                                                {starredIds.has(mail.id) && <span title="별표"><Star size={14} className="text-yellow-400 fill-yellow-400" /></span>}
+                                                                            </div>
+                                                                        )}
+                                                                        {/* 메일 제목 */}
+                                                                        <div className="flex-1 truncate text-[14px] text-neutral-700 pr-3">{mail.subject}</div>
+                                                                        {/* 날짜 */}
+                                                                        {mail.date && <span className="text-[11px] text-neutral-400 font-medium flex-shrink-0 tracking-wider tabular-nums mr-2">{formatMailDate(mail.date)}</span>}
+                                                                        {/* 발신자 (카테고리 뷰에서만 표시) */}
+                                                                        <span className="text-[11px] text-neutral-400 font-medium flex-shrink-0 mr-3 hidden sm:block truncate max-w-[120px]">{mail.sender}</span>
+                                                                        <button
+                                                                            onClick={(e) => { e.stopPropagation(); addAllToBasket([mail]); }}
+                                                                            className="opacity-0 group-hover/mail:opacity-100 focus:opacity-100 bg-white border border-neutral-200 text-neutral-600 hover:text-emerald-600 hover:border-emerald-600 rounded-full px-4 py-1.5 text-xs font-bold transition-all flex-shrink-0 shadow-sm"
+                                                                        >
+                                                                            담기
+                                                                        </button>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
+                                        </motion.div>
+                                    );
+                                })}
 
                                 {/* 카테고리 뷰에서 아무것도 없을 때 */}
                                 {viewMode === 'category' && categoryEntries.length === 0 && !isLoading && (
@@ -1102,7 +1302,7 @@ export default function TriagePage() {
                             <div className="grid grid-cols-2 gap-1.5 mb-1.5">
                                 {[
                                     { key: 'add:IMPORTANT', icon: <AlertCircle size={12} />, label: '중요' },
-                                    { key: 'add:STARRED',   icon: <Star size={12} />,    label: '별표' },
+                                    { key: 'add:STARRED', icon: <Star size={12} />, label: '별표' },
                                     // { key: 'add:label',     icon: <Tag size={12} />,     label: '라벨' },
                                 ].filter(item => !item.key.endsWith(':label')).map(({ key, icon, label }) => (
                                     <button
@@ -1127,7 +1327,7 @@ export default function TriagePage() {
                             <div className="grid grid-cols-2 gap-1.5 mb-5">
                                 {[
                                     { key: 'remove:IMPORTANT', icon: <AlertCircle size={12} />, label: '중요 ×' },
-                                    { key: 'remove:STARRED',   icon: <Star size={12} />,    label: '별표 ×' },
+                                    { key: 'remove:STARRED', icon: <Star size={12} />, label: '별표 ×' },
                                     // { key: 'remove:label',     icon: <Tag size={12} />,     label: '라벨 ×' },
                                 ].filter(item => !item.key.endsWith(':label')).map(({ key, icon, label }) => (
                                     <button
@@ -1163,15 +1363,15 @@ export default function TriagePage() {
                                 if (hasAddActions) {
                                     const tags: string[] = [];
                                     if (selectedActions.has('add:IMPORTANT')) tags.push('중요');
-                                    if (selectedActions.has('add:STARRED'))   tags.push('별표');
+                                    if (selectedActions.has('add:STARRED')) tags.push('별표');
                                     btnLabel = tags.length > 0 ? `${tags.join(' + ')} 추가하기` : '라벨 추가하기';
-                                    btnIcon  = <AlertCircle size={16} />;
+                                    btnIcon = <AlertCircle size={16} />;
                                 } else if (hasRemoveActions) {
                                     const tags: string[] = [];
                                     if (selectedActions.has('remove:IMPORTANT')) tags.push('중요');
-                                    if (selectedActions.has('remove:STARRED'))   tags.push('별표');
+                                    if (selectedActions.has('remove:STARRED')) tags.push('별표');
                                     btnLabel = tags.length > 0 ? `${tags.join(' + ')} 제거하기` : '라벨 제거하기';
-                                    btnIcon  = <X size={16} />;
+                                    btnIcon = <X size={16} />;
                                 }
                                 return (
                                     <button
