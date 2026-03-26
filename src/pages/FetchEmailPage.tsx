@@ -56,7 +56,7 @@ const FetchEmailPage = () => {
             const req: SyncEmailsReq = {
                 account_id: accountId,
                 user_id: 'me',
-                max_results: 50,
+                max_results: 1000,
             };
 
             // 실제 백엔드 /emails/sync 호출
