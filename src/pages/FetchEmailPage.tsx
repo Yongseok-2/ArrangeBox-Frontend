@@ -60,7 +60,11 @@ const FetchEmailPage = () => {
             };
 
             // 실제 백엔드 /emails/sync 호출
-            await apiClient.post('/emails/sync', req);
+            const response = await apiClient.post('/emails/sync', req);
+            
+            if (response.data && response.data.fetched_count !== undefined) {
+                localStorage.setItem('arrangebox_fetched_count', String(response.data.fetched_count));
+            }
 
             // 완료 시 즉시 100% 달성 및 타이머 종료
             clearInterval(interval);

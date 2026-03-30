@@ -48,7 +48,11 @@ export default function FetchEmailModal({ isOpen, onClose }: FetchEmailModalProp
                 max_results: 50,
             };
 
-            await apiClient.post('/emails/sync', req);
+            const response = await apiClient.post('/emails/sync', req);
+            
+            if (response.data && response.data.fetched_count !== undefined) {
+                localStorage.setItem('arrangebox_fetched_count', String(response.data.fetched_count));
+            }
 
             clearInterval(interval);
             setProgress(100);
