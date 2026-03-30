@@ -70,9 +70,7 @@ const Navbar = () => {
                     <div className="hidden md:flex items-center gap-8">
                         {isLandingPage && !isAuthenticated && (
                             <>
-                                <a href="#features" className="text-sm font-medium text-neutral-600 hover:text-orange-500 transition-colors">기능</a>
-                                <a href="#impact" className="text-sm font-medium text-neutral-600 hover:text-orange-500 transition-colors">환경 임팩트</a>
-                                <a href="#how-it-works" className="text-sm font-medium text-neutral-600 hover:text-orange-500 transition-colors">이용 방법</a>
+                                <button onClick={() => navigate('/how-it-works')} className="text-sm font-medium text-neutral-600 hover:text-orange-500 transition-colors">이용 방법</button>
                             </>
                         )}
 
@@ -123,9 +121,7 @@ const Navbar = () => {
                         >
                             {isLandingPage && !isAuthenticated && (
                                 <>
-                                    <a href="#features" onClick={() => setIsOpen(false)} className="text-lg font-medium text-neutral-800">기능</a>
-                                    <a href="#impact" onClick={() => setIsOpen(false)} className="text-lg font-medium text-neutral-800">환경 임팩트</a>
-                                    <a href="#how-it-works" onClick={() => setIsOpen(false)} className="text-lg font-medium text-neutral-800">이용 방법</a>
+                                    <button onClick={() => { setIsOpen(false); navigate('/how-it-works'); }} className="text-left text-lg font-medium text-neutral-800">이용 방법</button>
                                 </>
                             )}
 

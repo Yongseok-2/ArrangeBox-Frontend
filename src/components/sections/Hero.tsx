@@ -58,6 +58,7 @@ const Hero = () => {
                                 <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
                             </Button>
                             <Button
+                                onClick={() => navigate('/how-it-works')}
                                 variant="outline"
                                 className="flex h-auto items-center justify-center gap-2 rounded-full bg-white border border-neutral-200 px-8 py-4 text-base font-bold text-neutral-700 transition-all hover:border-orange-200 hover:bg-orange-50 hover:text-neutral-900"
                             >
@@ -156,7 +157,7 @@ const Hero = () => {
                                 <div className="relative z-10">
                                     <p className="text-emerald-200 text-xs font-bold tracking-wider mb-1">불필요한 이메일 1통</p>
                                     <h3 className="text-white text-3xl md:text-[2.5rem] font-black tracking-tight flex items-center gap-1 -ml-1">
-                                        4<span className="text-xl md:text-2xl mt-2 font-bold opacity-90">g CO2</span>
+                                        4<span className="text-xl md:text-2xl mt-2 font-bold opacity-90">g CO₂</span>
                                     </h3>
                                 </div>
                             </motion.div>

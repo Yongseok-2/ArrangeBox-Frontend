@@ -1,11 +1,12 @@
 import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Leaf, Inbox, Star, AlertCircle, Mail, HelpCircle, Tag, Zap, Loader2, User, Trash2, Archive, X, ExternalLink, ArrowUp, ChevronDown, RotateCcw, CheckCircle2 } from 'lucide-react';
+import { Leaf, Inbox, Star, AlertCircle, Mail, HelpCircle, Tag, Loader2, User, Trash2, Archive, X, ExternalLink, ArrowUp, ChevronDown, RotateCcw, CheckCircle2 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/api/axios';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useBasketStore } from '@/store/useBasketStore';
+import HowItWorksModal from '@/components/HowItWorksModal';
 
 interface BasketItem {
     id: string;
@@ -69,6 +70,9 @@ const categoryLabelMap: Record<string, string> = {
     newsletter_promo: '뉴스레터 / 프로모션',
     social_community: '소셜 / 커뮤니티',
     personal: '개인',
+    travel_reservation: '여행 / 예약',
+    career_recruitment: '경력 / 채용',
+    education_learning: '교육 / 학습',
     other: '기타',
 };
 
@@ -107,7 +111,7 @@ export default function TriagePage() {
     const [trashSuccess, setTrashSuccess] = useState(false);
     const [actionError, setActionError] = useState(false); // API 에러 알림
     // 선택 액션 Set: 'trash' | 'add:IMPORTANT' | 'add:STARRED' | 'add:label' | 'remove:IMPORTANT' | 'remove:STARRED' | 'remove:label'
-    const [selectedActions, setSelectedActions] = useState<Set<string>>(new Set(['trash']));
+    const [selectedActions, setSelectedActions] = useState<Set<string>>(new Set());
     const [executedIds, setExecutedIds] = useState<Set<string>>(new Set());
     const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [viewMode, setViewMode] = useState<'sender' | 'category'>('sender');
@@ -125,6 +129,7 @@ export default function TriagePage() {
 
     // 바구니 상태 - Zustand store (탭 전환/리마운트 시에도 유지)
     const { basket, addAll, removeBySender, removeById, restoreItems } = useBasketStore();
+    const [isHelpOpen, setIsHelpOpen] = useState(false);
 
     const mainRef = useRef<HTMLElement>(null);
     const [showTopBtn, setShowTopBtn] = useState(false);
@@ -137,7 +142,7 @@ export default function TriagePage() {
         mainRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    const { data, isLoading, isError } = useQuery({
+    const { data, isLoading, isError, refetch, isFetching } = useQuery({
         queryKey: ['triage-preview-db', accountId],
         queryFn: async () => {
             const response = await apiClient.post('/emails/triage/preview-db', {
@@ -547,7 +552,7 @@ export default function TriagePage() {
 
     // 실행 버튼 클릭 → 모달 오픈
     const handleExecuteAction = () => {
-        if (basket.length === 0 || trashMutation.isPending || labelMutation.isPending) return;
+        if (basket.length === 0 || selectedActions.size === 0 || trashMutation.isPending || labelMutation.isPending) return;
         setShowConfirmModal(true);
     };
 
@@ -664,6 +669,80 @@ export default function TriagePage() {
                 })()}
             </AnimatePresence>
 
+            {/* ===== 전역 로딩 오버레이 (작업 중 새로고침 및 중복 클릭 방지) ===== */}
+            <AnimatePresence>
+                {(trashMutation.isPending || labelMutation.isPending) && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm"
+                    >
+                        <Loader2 size={48} className="text-emerald-500 animate-spin mb-6" />
+                        <h2 className="text-white text-xl font-bold mb-2">메일 정리 작업을 실행 중입니다...</h2>
+                        <p className="text-neutral-300 text-sm opacity-80">도중에 브라우저를 닫거나 새로고침하지 마세요.</p>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+
+            {/* 글로벌 성공 / 에러 알림 */}
+            <div className="fixed bottom-10 left-0 right-0 z-[100] flex flex-col items-center justify-center gap-3 pointer-events-none">
+                <AnimatePresence>
+                    {trashSuccess && (
+                        <motion.div
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 20 }}
+                            className="flex items-center justify-center gap-2 bg-[#0C1F16] border border-emerald-500/30 text-emerald-400 text-[14px] font-bold px-6 py-4 rounded-2xl shadow-2xl pointer-events-auto"
+                        >
+                            <CheckCircle2 size={18} /> 성공적으로 처리되었습니다!
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+                <AnimatePresence>
+                    {actionError && (
+                        <motion.div
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 20 }}
+                            className="flex items-center justify-center gap-2 bg-[#1F0C0C] border border-red-500/30 text-red-400 text-[14px] font-bold px-6 py-4 rounded-2xl shadow-2xl pointer-events-auto"
+                        >
+                            <X size={18} /> API 호출 중 오류가 발생했습니다
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+                <AnimatePresence>
+                    {failedQueue.length > 0 && (
+                        <motion.div
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 20 }}
+                            className="flex items-center justify-between gap-6 bg-[#1F0C0C] border border-red-500/40 text-red-400 px-6 py-4 rounded-2xl shadow-[0_10px_40px_rgba(239,68,68,0.15)] pointer-events-auto min-w-[340px]"
+                        >
+                            <div className="flex items-center gap-2 text-[14px] font-bold">
+                                <AlertCircle size={18} />
+                                <span>메일 처리 실패 <strong className="text-white">{failedQueue.length}통</strong></span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <button
+                                    onClick={() => setFailedQueue([])}
+                                    className="text-[12px] font-bold text-neutral-400 hover:text-white transition-colors px-2 py-1"
+                                >
+                                    무시
+                                </button>
+                                <button
+                                    onClick={handleRetryFailed}
+                                    className="flex items-center gap-1.5 bg-red-500 hover:bg-red-600 text-white px-5 py-2.5 rounded-xl text-[12px] font-black transition-all shadow-lg hover:shadow-red-500/20"
+                                >
+                                    <RotateCcw size={14} /> 재시도
+                                </button>
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </div>
+
             <div className="flex h-full w-full">
                 {/* LEFT SIDEBAR */}
                 <aside className="w-[240px] flex-shrink-0 pt-10 pb-6 px-4 flex flex-col border-r border-neutral-200/50 bg-[#FAFAFA] overflow-y-auto">
@@ -671,10 +750,6 @@ export default function TriagePage() {
                         <h3 className="text-xs font-bold text-emerald-600 uppercase tracking-widest break-words pr-2">
                             {accountId ? `${accountId.split('@')[0]}\n@GMAIL.COM` : 'USER@GMAIL.COM'}'S MAILBOX
                         </h3>
-                        <p className="text-[10px] text-neutral-400 mt-2 flex items-center gap-1 font-medium">
-                            <Zap size={10} className="text-emerald-500" />
-                            Connected via AI sorting
-                        </p>
                     </div>
 
                     <nav className="flex flex-col gap-1.5">
@@ -686,7 +761,7 @@ export default function TriagePage() {
                     </nav>
 
                     <div className="mt-auto pt-6">
-                        <SidebarBtn icon={<HelpCircle size={18} />} label="도움말" active={false} onClick={() => { }} />
+                        <SidebarBtn icon={<HelpCircle size={18} />} label="도움말" active={isHelpOpen} onClick={() => setIsHelpOpen(true)} />
                     </div>
                 </aside>
 
@@ -697,22 +772,63 @@ export default function TriagePage() {
                     className="flex-1 overflow-y-auto px-10 pt-12 pb-32 flex flex-col items-center relative scrollbar-hide"
                 >
 
-                    <div className="flex justify-between items-start mb-10 w-full max-w-4xl">
-                        <div>
-                            <h1 className="text-4xl text-neutral-900 tracking-tight flex items-center gap-2 mb-3" style={{ fontWeight: 700 }}>
-                                나의 <span className="text-emerald-500 text-transparent bg-clip-text bg-gradient-to-r from-emerald-500 to-emerald-400">메일</span>보관함
-                            </h1>
-                        </div>
+                    <div className="mb-10 w-full max-w-4xl">
+                        <h1 className="text-4xl text-neutral-900 tracking-tight flex items-center gap-2 mb-6" style={{ fontWeight: 700 }}>
+                            나의 <span className="text-emerald-500 text-transparent bg-clip-text bg-gradient-to-r from-emerald-500 to-emerald-400">메일</span>보관함
+                        </h1>
 
-                        <div className="bg-emerald-50 rounded-[2rem] px-8 py-3.5 flex flex-col items-end relative overflow-hidden shadow-sm">
-                            <span className="text-[10px] font-bold text-emerald-600 mb-0.5 z-10 w-full text-left">성장 지표</span>
-                            <div className="flex items-center gap-2 z-10">
-                                <span className="text-3xl font-black text-emerald-600 tracking-tight">{((serverTotalUnique || allUniqueCount) * 0.4).toFixed(1)}<span className="text-lg tracking-normal font-bold">g CO2</span></span>
-                                <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30">
-                                    <Leaf size={14} />
+                        <div className="flex justify-between items-center w-full">
+                            {/* --- 진척도 UI & 새로고침 버튼 --- */}
+                            {(() => {
+                                const fetchedStr = localStorage.getItem('arrangebox_fetched_count');
+                                const fetchedMax = fetchedStr ? Number(fetchedStr) : 0;
+                                const currentCount = allUniqueCount || 0;
+
+                                // fetchedMax에 저장된 값이 1이상이라면 무조건 전체 개수(분모)로 사용. 아닐때만 fallback
+                                const displayMax = fetchedMax > 0 ? fetchedMax : (data?.total_count || currentCount);
+
+                                const ratio = displayMax > 0 ? Math.min(Math.round((currentCount / displayMax) * 100), 100) : 0;
+
+                                return (
+                                    <div className="flex items-center gap-4 bg-white border border-neutral-200/60 px-5 py-3.5 rounded-2xl shadow-sm">
+                                        <div className="flex flex-col flex-1 min-w-[240px]">
+                                            <div className="flex items-center justify-between mb-1.5">
+                                                <span className="text-[11px] font-bold text-neutral-400 tracking-wide uppercase">메일 분석 현황</span>
+                                                <span className="text-[12px] font-black text-emerald-600">
+                                                    {currentCount}
+                                                    <span className="text-[10px] text-neutral-400 font-bold ml-1">/ {displayMax}통 ({ratio}%)</span>
+                                                </span>
+                                            </div>
+                                            <div className="w-full h-1.5 bg-neutral-100 rounded-full overflow-hidden">
+                                                <div className="h-full bg-emerald-500 rounded-full transition-all duration-700 ease-in-out relative" style={{ width: `${ratio}%` }}>
+                                                    {ratio < 100 && <div className="absolute inset-0 bg-white/20 animate-pulse"></div>}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="w-[1px] h-6 bg-neutral-200/50 mx-1"></div>
+                                        <button
+                                            onClick={() => refetch()}
+                                            disabled={isFetching}
+                                            className="text-neutral-400 hover:text-emerald-600 hover:bg-emerald-50 p-2 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed group relative bg-neutral-50 border border-neutral-200/50 hover:border-emerald-200"
+                                            title="새로고침"
+                                        >
+                                            <RotateCcw size={15} strokeWidth={2.5} className={isFetching ? "animate-spin text-emerald-500" : "group-hover:rotate-180 transition-all duration-500 ease-out"} />
+                                        </button>
+                                    </div>
+                                );
+                            })()}
+
+                            {/* --- 비워내면 사라질 탄소 --- */}
+                            <div className="bg-emerald-50 rounded-[2rem] px-8 py-3.5 flex flex-col items-end relative overflow-hidden shadow-sm">
+                                <span className="text-[10px] font-bold text-emerald-600 mb-0.5 z-10 w-full text-left">비워내면 사라질 탄소</span>
+                                <div className="flex items-center gap-2 z-10">
+                                    <span className="text-3xl font-black text-emerald-600 tracking-tight">{((serverTotalUnique || allUniqueCount) * 0.4).toFixed(1)}<span className="text-lg tracking-normal font-bold">g CO₂</span></span>
+                                    <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30">
+                                        <Leaf size={14} />
+                                    </div>
                                 </div>
+                                <div className="absolute -right-4 -bottom-4 w-20 h-20 bg-emerald-200/30 rounded-full blur-xl z-0"></div>
                             </div>
-                            <div className="absolute -right-4 -bottom-4 w-20 h-20 bg-emerald-200/30 rounded-full blur-xl z-0"></div>
                         </div>
                     </div>
 
@@ -1225,60 +1341,8 @@ export default function TriagePage() {
                             )}
                         </div>
 
-                        {/* 성공 / 에러 알림 (absolute - 공간 차지 안 함) */}
-                        <div className="relative w-full h-0 z-50">
-                            <AnimatePresence>
-                                {trashSuccess && (
-                                    <motion.div
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: 10 }}
-                                        className="absolute bottom-4 left-0 right-0 flex items-center justify-center gap-2 bg-[#0C1F16] border border-emerald-500/30 text-emerald-400 text-[12px] font-bold px-4 py-3 rounded-xl shadow-xl pointer-events-none"
-                                    >
-                                        <CheckCircle2 size={15} /> 성공적으로 처리되었습니다!
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
-                            <AnimatePresence>
-                                {actionError && (
-                                    <motion.div
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: 10 }}
-                                        className="absolute bottom-4 left-0 right-0 flex items-center justify-center gap-2 bg-[#1F0C0C] border border-red-500/30 text-red-400 text-[12px] font-bold px-4 py-3 rounded-xl shadow-xl pointer-events-none"
-                                    >
-                                        <X size={15} /> 오류가 발생했습니다
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
-                        </div>
 
-                        {/* 실패 큐(FailedQueue) */}
-                        <AnimatePresence>
-                            {failedQueue.length > 0 && (
-                                <motion.div
-                                    initial={{ opacity: 0, y: -8 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, y: -8 }}
-                                    className="bg-red-500/10 border border-red-500/30 rounded-2xl p-3.5 mb-4"
-                                >
-                                    <div className="flex items-center justify-between mb-2">
-                                        <p className="text-red-400 text-[12px] font-black">⚠ 삭제 실패 {failedQueue.length}통</p>
-                                        <button
-                                            onClick={handleRetryFailed}
-                                            className="flex items-center gap-1 text-[11px] font-bold text-red-400 hover:text-white border border-red-500/40 hover:bg-red-500/30 px-2 py-1 rounded-lg transition-all"
-                                        >
-                                            <RotateCcw size={11} /> 재시도
-                                        </button>
-                                    </div>
-                                    <div className="flex flex-col gap-1">
-                                        {failedQueue.map(item => (
-                                            <p key={item.id} className="text-[11px] text-neutral-400 truncate">{item.subject || '(제목 없음)'}</p>
-                                        ))}
-                                    </div>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
+
 
                         {/* Actions Block */}
                         <div className="mt-auto pt-6 border-t border-white/5">
@@ -1349,18 +1413,22 @@ export default function TriagePage() {
 
                             <div className="flex justify-between items-end mb-6 px-1">
                                 <div>
-                                    <p className="text-[11px] text-emerald-500 font-bold mt-0.5">절감 예측</p>
+                                    <p className="text-[11px] text-emerald-500 font-bold mt-0.5">탄소 절감량</p>
                                 </div>
                                 <p className="text-[28px] leading-none font-black text-emerald-500">
-                                    {(basket.length * 0.4).toFixed(1)}<span className="text-sm font-bold tracking-tight text-emerald-600">g CO2</span>
+                                    {(basket.length * 0.4).toFixed(1)}<span className="text-sm font-bold tracking-tight text-emerald-600">g CO₂</span>
                                 </p>
                             </div>
 
                             {/* 모드별 버튼 텍스트·아이콘 동적 렌더링 */}
                             {(() => {
-                                let btnLabel = '지금 바로 정리하기';
-                                let btnIcon = <Trash2 size={16} />;
-                                if (hasAddActions) {
+                                let btnLabel = '어떤 작업을 실행할까요?';
+                                let btnIcon = <></>;
+
+                                if (isTrashMode) {
+                                    btnLabel = '지금 바로 정리하기';
+                                    btnIcon = <Trash2 size={16} />;
+                                } else if (hasAddActions) {
                                     const tags: string[] = [];
                                     if (selectedActions.has('add:IMPORTANT')) tags.push('중요');
                                     if (selectedActions.has('add:STARRED')) tags.push('별표');
@@ -1373,11 +1441,19 @@ export default function TriagePage() {
                                     btnLabel = tags.length > 0 ? `${tags.join(' + ')} 제거하기` : '라벨 제거하기';
                                     btnIcon = <X size={16} />;
                                 }
+
+                                const isReady = basket.length > 0 && selectedActions.size > 0;
+
                                 return (
                                     <button
                                         onClick={handleExecuteAction}
-                                        disabled={basket.length === 0 || trashMutation.isPending || labelMutation.isPending}
-                                        className="w-full bg-[#F97415] hover:bg-[#F97415]/90 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 text-[14px] shadow-[0_8px_20px_rgba(249,116,21,0.2)] hover:shadow-[0_8px_25px_rgba(249,116,21,0.35)] hover:-translate-y-0.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none"
+                                        disabled={!isReady || trashMutation.isPending || labelMutation.isPending}
+                                        className={cn(
+                                            "w-full font-bold py-4 rounded-2xl flex items-center justify-center gap-2 text-[14px] transition-all",
+                                            isReady
+                                                ? "bg-[#F97415] hover:bg-[#F97415]/90 text-white shadow-[0_8px_20px_rgba(249,116,21,0.2)] hover:shadow-[0_8px_25px_rgba(249,116,21,0.35)] hover:-translate-y-0.5"
+                                                : "bg-white/5 text-neutral-500 cursor-not-allowed border border-white/5"
+                                        )}
                                     >
                                         {(trashMutation.isPending || labelMutation.isPending) ? (
                                             <><Loader2 size={16} className="animate-spin" /> 처리 중...</>
@@ -1394,6 +1470,7 @@ export default function TriagePage() {
                     </div>
                 </aside>
             </div>
+            <HowItWorksModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
         </div>
     );
 }

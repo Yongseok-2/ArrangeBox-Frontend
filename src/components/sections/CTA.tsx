@@ -1,6 +1,9 @@
 import { Button } from '@/components/ui/button';
+import { useGoogleLogin } from '@/hooks/useGoogleLogin';
 
 const CTA = () => {
+    const { login, isLoading } = useGoogleLogin();
+
     return (
         <section className="relative py-20 bg-orange-500 overflow-hidden text-center">
             <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10" />
@@ -13,11 +16,15 @@ const CTA = () => {
                     박스를 비워보세요
                 </h2>
                 <p className="text-xl md:text-2xl text-orange-50 mb-4 font-medium">
-                    이메일 정리가 지구를 살리는 첫 걸음입니다.
+                    당신의 작은 정리가 지구를 위한 큰 변화가 됩니다.
                 </p>
                 <div className="flex flex-col sm:flex-row justify-center gap-4 mt-8">
-                    <Button className="rounded-full h-auto bg-white px-8 py-4 text-lg font-bold text-orange-600 shadow-xl transition-transform hover:scale-105 hover:shadow-2xl hover:bg-orange-50">
-                        Google 계정으로 시작하기
+                    <Button 
+                        onClick={login}
+                        disabled={isLoading}
+                        className="rounded-full h-auto bg-white px-8 py-4 text-lg font-bold text-orange-600 shadow-xl transition-transform hover:scale-105 hover:shadow-2xl hover:bg-orange-50 disabled:opacity-75 disabled:hover:scale-100 disabled:cursor-not-allowed"
+                    >
+                        {isLoading ? '연결 중...' : 'Google 계정으로 시작하기'}
                     </Button>
                 </div>
             </div>
