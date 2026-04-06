@@ -123,7 +123,7 @@ const Hero = () => {
                                         </div>
                                         <div>
                                             <h4 className="font-bold text-white text-xl">정리 바구니</h4>
-                                            <p className="text-xs text-neutral-400 font-medium">전체 임팩트</p>
+                                            <p className="text-xs text-neutral-400 font-medium">이메일</p>
                                         </div>
                                     </div>
                                     <div className="w-7 h-7 rounded-full bg-[#086B42] text-white flex items-center justify-center text-xs font-bold border border-white/10 mt-1">
